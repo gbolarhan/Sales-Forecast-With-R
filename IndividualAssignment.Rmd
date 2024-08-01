@@ -1,0 +1,198 @@
+---
+title: "Dashboard for Retail Sales"
+output:
+  flexdashboard::flex_dashboard:
+    theme:
+      bootswatch: cerulean
+    orientation: rows
+    source_code: https://github.com/gbolarhan/Sales-Forecast-With-R
+    source_code_icon: fa-github
+runtime: shiny
+---
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+library(flexdashboard)
+library(shinythemes)
+library(tidyverse)
+library(forecast)
+library(plotly)
+library(DT)
+
+# historical records from multiple stores
+fsales <- "https://raw.githubusercontent.com/multidis/hult-inter-bus-reports-r/main/forecasting/sales_weekly.csv"
+sales <- read_csv(fsales)
+
+# latest (current) week
+nweek_now <- max(sales$Week)
+```
+
+```{r echo = FALSE}
+# Define UI for application
+ui <- fluidPage(
+  theme = shinytheme("cerulean"),
+  tags$head(
+    tags$link(rel = "stylesheet", href = "https://use.fontawesome.com/releases/v5.8.2/css/all.css"),
+    tags$style(HTML("
+      .page-footer, .navbar-default {
+        background-color: #0275d8;
+        color: white;
+      }
+      a {
+        text-decoration: underline;
+      }
+      .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #033c72;
+        color: white;
+        text-align: center;
+        padding: 10px 0;
+      }
+      .footer a {
+        color: white;
+        margin: 0 10px;
+      }
+    "))
+  ),
+  titlePanel(
+    div(
+      span("Dashboard Description", class = "h4"),
+      style = "display: flex; align-items: center;"
+    )
+  ),
+  fluidRow(
+    column(
+      12,
+      div(
+        HTML("<p>This dashboard application provides sales forecasting functionality for a retailer based on historical weekly sales data. Select a store, forecast horizon, and other parameters to generate forecasts and visualize sales data. To begin, click on <b>Generate Forecast</b> button below.</p>"),
+        style = "margin-bottom: 20px;"
+      )
+    )
+  ),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("store", "Select Store:", choices = unique(sales$Store)),
+      numericInput("quarter", "Select Quarter for Forecast:", value = 2, min = 1, max = 4),
+      numericInput("week", "Select Week for Forecast (within next 3 months):", value = 2, min = 1, max = 13),
+      sliderInput("conf_interval", "Confidence Interval:", min = 50, max = 99, value = 95, step = 1),
+      actionButton("forecast", "Generate Forecast", class = "btn btn-primary")
+    ),
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Current Week Performance", DTOutput("currentWeekPerformance")),
+        tabPanel("Historical Sales", DTOutput("salesTable"), plotlyOutput("salesPlot")),
+        tabPanel("Sales Forecast", plotlyOutput("forecastPlot"), DTOutput("forecastTable")),
+        tabPanel("Yearly Comparison", plotlyOutput("yearlyComparisonPlot"))
+      )
+    )
+  ),
+  tags$footer(HTML("
+    <footer class='footer'>
+      <div class='container'>
+        <span>&copy; 2024 Omogbolahan Alli. All rights reserved.
+          <a href='https://www.linkedin.com/in/gbolarhan/'><i class='fab fa-linkedin'></i></a>
+          <a href='https://twitter.com/alligbolahan'><i class='fab fa-twitter'></i></a>
+          <a href='https://github.com/gbolarhan'><i class='fab fa-github'></i></a>
+        </span>
+      </div>
+    </footer>
+  "))
+)
+
+# Define server logic required to draw plots and tables
+server <- function(input, output) {
+  store_data <- reactive({
+    req(input$store)
+    sales %>% filter(Store == input$store)
+  })
+
+  output$salesTable <- renderDT({
+    store_data() %>%
+      datatable(options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$salesPlot <- renderPlotly({
+    if (nrow(store_data()) == 0) {
+      plot_ly() %>% layout(title = "No Data")
+    } else {
+      p <- ggplot(store_data(), aes(x = Week, y = Weekly_Sales)) +
+        geom_line() +
+        labs(title = "Historical Weekly Sales", x = "Week", y = "Weekly Sales")
+      ggplotly(p)
+    }
+  })
+
+  observeEvent(input$forecast, {
+    sales_hist <- store_data() %>% filter(Week <= nweek_now - 13)
+    sales_last <- store_data() %>% filter(Week > nweek_now - 13)
+
+    sales_hist_ts <- ts(sales_hist$Weekly_Sales, frequency = 52)
+    arima_model <- auto.arima(sales_hist_ts, seasonal.test = "seas")
+    arima_pred <- forecast(arima_model, h = 13)
+
+    output$currentWeekPerformance <- renderDT({
+      last_week_sales <- sales %>% filter(Store == input$store & Week == nweek_now)
+      forecasted_sales <- if (length(arima_pred$mean) >= input$week) arima_pred$mean[input$week] else NA
+
+      data.frame(
+        Metric = c("Current Week Actual Sales", "Forecasted Sales"),
+        Value = c(last_week_sales$Weekly_Sales, round(forecasted_sales, 2))
+      ) %>%
+        datatable(options = list(dom = "t", paging = FALSE, searching = FALSE, autoWidth = FALSE))
+    })
+
+    output$forecastPlot <- renderPlotly({
+      sales_pred_eval <- data.frame(
+        predicted = as.numeric(arima_pred$mean),
+        actual = sales_last$Weekly_Sales,
+        Week = sales_last$Week
+      )
+      p <- ggplot(sales_pred_eval, aes(x = Week)) +
+        geom_line(aes(y = predicted, col = "Predicted")) +
+        geom_line(aes(y = actual, col = "Actual")) +
+        labs(title = "Sales Forecast vs Actual", x = "Week", y = "Weekly Sales")
+      ggplotly(p)
+    })
+
+    output$forecastTable <- renderDT({
+      data.frame(
+        Week = sales_last$Week,
+        Predicted = as.numeric(arima_pred$mean),
+        Actual = sales_last$Weekly_Sales
+      ) %>%
+        datatable(options = list(dom = "t", paging = FALSE, searching = FALSE, scrollX = TRUE))
+    })
+
+    # Generate forecast for specific quarter
+    future_weeks <- input$quarter * 13
+    arima_future_pred <- forecast(arima_model, h = future_weeks)
+
+    output$yearlyComparisonPlot <- renderPlotly({
+      past_year_data <- sales %>%
+        filter(Store == input$store & Week <= nweek_now & Week > (nweek_now - 52))
+      future_year_data <- data.frame(
+        Week = (nweek_now + 1):(nweek_now + 52),
+        Weekly_Sales = arima_future_pred$mean[1:52],
+        Store = as.numeric(input$store)
+      ) # Ensure Store column type is numeric
+
+      future_year_data <- future_year_data %>% mutate(Type = "Forecast")
+      past_year_data <- past_year_data %>% mutate(Type = "Actual")
+      combined_data <- bind_rows(
+        past_year_data,
+        future_year_data
+      )
+
+      p <- ggplot(combined_data, aes(x = Week, y = Weekly_Sales, col = Type)) +
+        geom_line() +
+        labs(title = "Weekly Sales: Actual vs Forecast", x = "Week", y = "Weekly Sales")
+      ggplotly(p)
+    })
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+```
