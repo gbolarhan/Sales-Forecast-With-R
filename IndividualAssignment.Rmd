@@ -66,7 +66,12 @@ ui <- fluidPage(
     column(
       12,
       div(
-        HTML("<p>This dashboard application provides sales forecasting functionality for a retailer based on historical weekly sales data. Select a store, forecast horizon, and other parameters to generate forecasts and visualize sales data. To begin, click on <b>Generate Forecast</b> button below.</p>"),
+        HTML("<p>This dashboard application provides sales forecasting functionality for a retailer based on historical weekly sales data. Select a store, forecast horizon, and other parameters to generate forecasts and visualize sales data. To begin, click on <b>Generate Forecast</b> button below.</p>
+             <p>
+                Based on the applied filters for <strong>Store 1</strong>, the sales forecast for the next 2 quarters (26 weeks) and specifically focusing on the 2nd week within the next 3 months predicts a slight increase in sales. The current week’s actual sales are approximately <strong>$1,631,135.79</strong>, and the forecasted sales for the second week are around <strong>$1,711,623.27</strong>. This indicates potential positive growth, suggesting effective promotional strategies or other factors that may boost sales. The 95% confidence interval provides a high degree of certainty, ensuring reliable business decisions and reducing the risk of stockouts or overstock situations.</p>
+<p>
+The visualization plots, such as the <strong>Sales Forecast vs Actual</strong> and <strong>Yearly Comparison</strong>, provide valuable insights into the alignment between predicted and actual sales. The forecasted sales trajectory follows historical patterns, highlighting deviations where actual sales either surpassed or fell short of predictions. This variance offers insights into external factors influencing sales. The yearly comparison plot shows expected peaks and troughs, aligning with historical trends, which is crucial for strategic planning, inventory management, and marketing strategies. By monitoring actual sales against the forecast, the store can adapt to changing conditions and optimize operations for better financial performance.
+             </p>"),
         style = "margin-bottom: 20px;"
       )
     )
